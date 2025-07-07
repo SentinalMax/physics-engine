@@ -1,3 +1,12 @@
+#ifdef Rectangle
+#undef Rectangle
+#endif
+#ifdef Circle
+#undef Circle
+#endif
+#ifdef Triangle
+#undef Triangle
+#endif
 #include "shapes.h"
 #include "config.h"
 #include <glm/gtc/matrix_transform.hpp>
@@ -18,16 +27,26 @@ void BoundingBox::update(const glm::vec2& position, float width, float height) {
 }
 
 // Shape base class implementation
-Shape::Shape(const glm::vec2& pos, const glm::vec3& col) 
-    : position(pos), velocity(0.0f), acceleration(0.0f), color(col), 
-      rotation(0.0f), angularVelocity(0.0f), isSelected(false), isDragging(false) {
+Shape::Shape(const glm::vec2& pos, const glm::vec3& col)
+    : position(pos), velocity(0.0f), acceleration(0.0f), color(col), rotation(0.0f), angularVelocity(0.0f),
+      isSelected(false), isDragging(false), dragOffset(0.0f), useGlobalGravity(true),
+      currentLOD(100.0f, 1.0f, true, true), lastUpdateTime(0.0f), updateAccumulator(0.0f),
+      needsDetailedUpdate(true), isOptimized(false) {
+    physics.position = pos;
+    physics.velocity = glm::vec2(0.0f);
+    physics.rotation = 0.0f;
 }
 
 void Shape::update(float deltaTime) {
-    if (physics.isStatic) return;
+    // LOD-based update frequency
+    if (!shouldUpdate(deltaTime)) {
+        return;
+    }
     
     // Apply gravity
-    acceleration.y -= physics.gravity;
+    if (!physics.isStatic && useGlobalGravity) {
+        acceleration.y -= physics.gravity;
+    }
     
     // Update velocity
     velocity += acceleration * deltaTime;
@@ -45,7 +64,20 @@ void Shape::update(float deltaTime) {
     acceleration = glm::vec2(0.0f);
     
     // Update bounding box
-    boundingBox = getBoundingBox();
+    updateBoundingBox();
+}
+
+bool Shape::shouldUpdate(float deltaTime) {
+    updateAccumulator += deltaTime;
+    
+    // Check if enough time has passed for this LOD level
+    if (updateAccumulator >= currentLOD.updateInterval) {
+        updateAccumulator = 0.0f;
+        lastUpdateTime = deltaTime;
+        return true;
+    }
+    
+    return false;
 }
 
 void Shape::applyForce(const glm::vec2& force) {
@@ -74,8 +106,8 @@ void Shape::renderBoundingBox() const {
 
 void Shape::startDrag(const glm::vec2& mousePos) {
     isDragging = true;
-    dragOffset = mousePos - position;
-    velocity = glm::vec2(0.0f);
+    dragOffset = mousePos - getPosition();
+    setVelocity(glm::vec2(0.0f));
     angularVelocity = 0.0f;
     dragHistory.clear();
     double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -84,7 +116,7 @@ void Shape::startDrag(const glm::vec2& mousePos) {
 
 void Shape::updateDrag(const glm::vec2& mousePos) {
     if (isDragging) {
-        position = mousePos - dragOffset;
+        setPosition(mousePos - dragOffset);
         boundingBox = getBoundingBox();
         double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
         dragHistory.push_back({mousePos, now});
@@ -101,10 +133,14 @@ void Shape::endDrag() {
         double dt = last.second - prev.second;
         if (dt > 0.0001) {
             glm::vec2 v = (last.first - prev.first) / static_cast<float>(dt);
-            velocity = v;
+            setVelocity(v);
         }
     }
     dragHistory.clear();
+}
+
+void Shape::updateBoundingBox() {
+    boundingBox = getBoundingBox();
 }
 
 // Circle implementation
@@ -116,19 +152,19 @@ bool Circle::checkCollision(const Shape* other) const {
     switch (other->getType()) {
         case ShapeType::CIRCLE: {
             const Circle* circle = static_cast<const Circle*>(other);
-            glm::vec2 diff = position - circle->position;
+            glm::vec2 diff = getPosition() - circle->getPosition();
             float distance = glm::length(diff);
             return distance < (radius + circle->radius);
         }
         case ShapeType::RECTANGLE: {
             const Rectangle* rect = static_cast<const Rectangle*>(other);
-            glm::vec2 closest = position;
+            glm::vec2 closest = getPosition();
             closest.x = std::max(rect->getPosition().x - rect->getWidth() * 0.5f, 
-                                std::min(position.x, rect->getPosition().x + rect->getWidth() * 0.5f));
+                                std::min(getPosition().x, rect->getPosition().x + rect->getWidth() * 0.5f));
             closest.y = std::max(rect->getPosition().y - rect->getHeight() * 0.5f, 
-                                std::min(position.y, rect->getPosition().y + rect->getHeight() * 0.5f));
+                                std::min(getPosition().y, rect->getPosition().y + rect->getHeight() * 0.5f));
             
-            glm::vec2 diff = position - closest;
+            glm::vec2 diff = getPosition() - closest;
             return glm::length(diff) < radius;
         }
         case ShapeType::TRIANGLE: {
@@ -144,7 +180,7 @@ void Circle::resolveCollision(Shape* other, const glm::vec2& normal, float penet
     if (physics.isStatic && other->getPhysics().isStatic) return;
     
     // Only handle velocity resolution here - positional correction is handled by physics engine
-    glm::vec2 relativeVel = velocity - other->getVelocity();
+    glm::vec2 relativeVel = getVelocity() - other->getVelocity();
     float velAlongNormal = glm::dot(relativeVel, normal);
     
     if (velAlongNormal > 0) return; // Objects are separating
@@ -156,7 +192,7 @@ void Circle::resolveCollision(Shape* other, const glm::vec2& normal, float penet
     glm::vec2 impulse = j * normal;
     
     if (!physics.isStatic) {
-        velocity += impulse / physics.mass;
+        setVelocity(getVelocity() + impulse / physics.mass);
     }
     if (!other->getPhysics().isStatic) {
         other->setVelocity(other->getVelocity() - impulse / other->getPhysics().mass);
@@ -165,19 +201,19 @@ void Circle::resolveCollision(Shape* other, const glm::vec2& normal, float penet
 
 BoundingBox Circle::getBoundingBox() const {
     BoundingBox box;
-    box.min = position - glm::vec2(radius);
-    box.max = position + glm::vec2(radius);
+    box.min = getPosition() - glm::vec2(radius);
+    box.max = getPosition() + glm::vec2(radius);
     return box;
 }
 
 void Circle::render() const {
     glColor3f(color.r, color.g, color.b);
     glBegin(GL_TRIANGLE_FAN);
-    glVertex2f(position.x, position.y);
+    glVertex2f(getPosition().x, getPosition().y);
     for (int i = 0; i <= 32; ++i) {
-        float angle = 2.0f * M_PI * i / 32.0f;
-        glVertex2f(position.x + radius * cos(angle), 
-                   position.y + radius * sin(angle));
+        float angle = 2.0f * static_cast<float>(M_PI) * static_cast<float>(i) / 32.0f;
+        glVertex2f(getPosition().x + radius * cos(angle), 
+                   getPosition().y + radius * sin(angle));
     }
     glEnd();
     
@@ -187,7 +223,7 @@ void Circle::render() const {
 }
 
 bool Circle::containsPoint(const glm::vec2& point) const {
-    glm::vec2 diff = point - position;
+    glm::vec2 diff = point - getPosition();
     return glm::length(diff) <= radius;
 }
 
@@ -201,10 +237,10 @@ bool Rectangle::checkCollision(const Shape* other) const {
         case ShapeType::CIRCLE: {
             const Circle* circle = static_cast<const Circle*>(other);
             glm::vec2 closest = circle->getPosition();
-            closest.x = std::max(position.x - width * 0.5f, 
-                                std::min(circle->getPosition().x, position.x + width * 0.5f));
-            closest.y = std::max(position.y - height * 0.5f, 
-                                std::min(circle->getPosition().y, position.y + height * 0.5f));
+            closest.x = std::max(getPosition().x - width * 0.5f, 
+                                std::min(circle->getPosition().x, getPosition().x + width * 0.5f));
+            closest.y = std::max(getPosition().y - height * 0.5f, 
+                                std::min(circle->getPosition().y, getPosition().y + height * 0.5f));
             
             glm::vec2 diff = circle->getPosition() - closest;
             return glm::length(diff) < circle->getRadius();
@@ -225,7 +261,7 @@ void Rectangle::resolveCollision(Shape* other, const glm::vec2& normal, float pe
     if (physics.isStatic && other->getPhysics().isStatic) return;
     
     // Only handle velocity resolution here - positional correction is handled by physics engine
-    glm::vec2 relativeVel = velocity - other->getVelocity();
+    glm::vec2 relativeVel = getVelocity() - other->getVelocity();
     float velAlongNormal = glm::dot(relativeVel, normal);
     
     if (velAlongNormal > 0) return;
@@ -237,7 +273,7 @@ void Rectangle::resolveCollision(Shape* other, const glm::vec2& normal, float pe
     glm::vec2 impulse = j * normal;
     
     if (!physics.isStatic) {
-        velocity += impulse / physics.mass;
+        setVelocity(getVelocity() + impulse / physics.mass);
     }
     if (!other->getPhysics().isStatic) {
         other->setVelocity(other->getVelocity() - impulse / other->getPhysics().mass);
@@ -246,17 +282,17 @@ void Rectangle::resolveCollision(Shape* other, const glm::vec2& normal, float pe
 
 BoundingBox Rectangle::getBoundingBox() const {
     BoundingBox box;
-    box.update(position, width, height);
+    box.update(getPosition(), width, height);
     return box;
 }
 
 void Rectangle::render() const {
     glColor3f(color.r, color.g, color.b);
     glBegin(GL_QUADS);
-    glVertex2f(position.x - width * 0.5f, position.y - height * 0.5f);
-    glVertex2f(position.x + width * 0.5f, position.y - height * 0.5f);
-    glVertex2f(position.x + width * 0.5f, position.y + height * 0.5f);
-    glVertex2f(position.x - width * 0.5f, position.y + height * 0.5f);
+    glVertex2f(getPosition().x - width * 0.5f, getPosition().y - height * 0.5f);
+    glVertex2f(getPosition().x + width * 0.5f, getPosition().y - height * 0.5f);
+    glVertex2f(getPosition().x + width * 0.5f, getPosition().y + height * 0.5f);
+    glVertex2f(getPosition().x - width * 0.5f, getPosition().y + height * 0.5f);
     glEnd();
     
     if (isSelected) {
@@ -265,10 +301,10 @@ void Rectangle::render() const {
 }
 
 bool Rectangle::containsPoint(const glm::vec2& point) const {
-    return point.x >= position.x - width * 0.5f && 
-           point.x <= position.x + width * 0.5f &&
-           point.y >= position.y - height * 0.5f && 
-           point.y <= position.y + height * 0.5f;
+    return point.x >= getPosition().x - width * 0.5f && 
+           point.x <= getPosition().x + width * 0.5f &&
+           point.y >= getPosition().y - height * 0.5f && 
+           point.y <= getPosition().y + height * 0.5f;
 }
 
 // Triangle implementation
@@ -286,9 +322,9 @@ void Triangle::updateVertices() {
     vertices.clear();
     float height = sideLength * static_cast<float>(sqrt(3.0f)) / 2.0f;
     
-    vertices.push_back(position + glm::vec2(0, height / 3.0f)); // Top
-    vertices.push_back(position + glm::vec2(-sideLength / 2.0f, -height / 3.0f)); // Bottom left
-    vertices.push_back(position + glm::vec2(sideLength / 2.0f, -height / 3.0f)); // Bottom right
+    vertices.push_back(getPosition() + glm::vec2(0, height / 3.0f)); // Top
+    vertices.push_back(getPosition() + glm::vec2(-sideLength / 2.0f, -height / 3.0f)); // Bottom left
+    vertices.push_back(getPosition() + glm::vec2(sideLength / 2.0f, -height / 3.0f)); // Bottom right
 }
 
 bool Triangle::checkCollision(const Shape* other) const {
@@ -300,7 +336,7 @@ void Triangle::resolveCollision(Shape* other, const glm::vec2& normal, float pen
     if (physics.isStatic && other->getPhysics().isStatic) return;
     
     // Only handle velocity resolution here - positional correction is handled by physics engine
-    glm::vec2 relativeVel = velocity - other->getVelocity();
+    glm::vec2 relativeVel = getVelocity() - other->getVelocity();
     float velAlongNormal = glm::dot(relativeVel, normal);
     
     if (velAlongNormal > 0) return;
@@ -312,7 +348,7 @@ void Triangle::resolveCollision(Shape* other, const glm::vec2& normal, float pen
     glm::vec2 impulse = j * normal;
     
     if (!physics.isStatic) {
-        velocity += impulse / physics.mass;
+        setVelocity(getVelocity() + impulse / physics.mass);
         updateVertices(); // Update triangle vertices after position change
     }
     if (!other->getPhysics().isStatic) {
@@ -323,8 +359,8 @@ void Triangle::resolveCollision(Shape* other, const glm::vec2& normal, float pen
 BoundingBox Triangle::getBoundingBox() const {
     BoundingBox box;
     float height = sideLength * static_cast<float>(sqrt(3.0f)) / 2.0f;
-    box.min = position - glm::vec2(sideLength / 2.0f, height / 3.0f);
-    box.max = position + glm::vec2(sideLength / 2.0f, height * 2.0f / 3.0f);
+    box.min = getPosition() - glm::vec2(sideLength / 2.0f, height / 3.0f);
+    box.max = getPosition() + glm::vec2(sideLength / 2.0f, height * 2.0f / 3.0f);
     return box;
 }
 

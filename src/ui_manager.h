@@ -43,12 +43,12 @@ private:
     int objectCount;
     bool showVelocityVectors;
     int uiScale;
+    float smoothedFPS;
     
     // FPS smoothing
     static const int FPS_SAMPLE_COUNT = 60;
     float frameTimes[FPS_SAMPLE_COUNT];
     int frameTimeIndex;
-    float smoothedFPS;
     
     // Enhanced spawn panel state
     SpawnMode spawnMode;
@@ -60,6 +60,7 @@ private:
     float goldenRatioRadius;
     float goldenRatioSpacing;
     int spawnObjectCount;
+    bool useGlobalGravityForNewShapes;
     
     void renderMainMenu();
     void renderPropertyPanel();
@@ -84,6 +85,7 @@ public:
     // Debug info getters
     float getSmoothedFPS() const { return smoothedFPS; }
     bool getShowVelocityVectors() const { return showVelocityVectors; }
+    bool getShowSpatialGrid() const { return physicsEngine ? physicsEngine->getShowSpatialGrid() : false; }
     int getUIScale() const { return uiScale; }
     void setUIScale(int scale) { uiScale = scale; }
     
@@ -102,4 +104,10 @@ public:
     static void shutdown();
     void newFrame();
     static void renderFrame();
+    
+    // UI state setters
+    void setShowVelocityVectors(bool show) { showVelocityVectors = show; }
+    void setShowSpatialGrid(bool show) { if (physicsEngine) physicsEngine->setShowSpatialGrid(show); }
+    
+    // Performance monitoring
 }; 

@@ -1,7 +1,23 @@
+#ifdef Rectangle
+#undef Rectangle
+#endif
+#ifdef Circle
+#undef Circle
+#endif
+#ifdef Triangle
+#undef Triangle
+#endif
+
+#include <iostream>
+#include <chrono>
+#include <thread>
+#include <memory>
+#include "shapes.h"
 #include "config.h"
 #include "physics_engine.h"
 #include "ui_manager.h"
-#include <iostream>
+#include <glad/glad.h>
+#include <imgui.h>
 
 using namespace std;
 
@@ -17,34 +33,28 @@ void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
         return; // Let ImGui handle this
     }
     
-    if (button == GLFW_MOUSE_BUTTON_LEFT) {
-        if (action == GLFW_PRESS) {
-            double xpos, ypos;
-            glfwGetCursorPos(window, &xpos, &ypos);
-            cout << "Mouse press at: (" << xpos << ", " << ypos << ")" << endl;
+    if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS) {
+        double xpos, ypos;
+        glfwGetCursorPos(window, &xpos, &ypos);
+        
+        // Check if click-to-spawn mode is active
+        if (uiManager && uiManager->isClickToSpawnMode()) {
+            // Convert screen coordinates to world coordinates
+            glm::vec2 worldPos(xpos, ypos);
+            uiManager->handleClickToSpawn(worldPos);
+        } else if (physicsEngine) {
+            // Normal shape selection/dragging
+            physicsEngine->handleMousePress(glm::vec2(xpos, ypos));
             
-            // Check if click-to-spawn mode is active
-            if (uiManager->isClickToSpawnMode()) {
-                // Convert screen coordinates to world coordinates
-                glm::vec2 worldPos(xpos, ypos);
-                uiManager->handleClickToSpawn(worldPos);
-                cout << "Spawned object at: (" << worldPos.x << ", " << worldPos.y << ")" << endl;
-            } else {
-                // Normal shape selection/dragging
-                physicsEngine->handleMousePress(glm::vec2(xpos, ypos));
-                
-                // Update UI selection
-                Shape* selected = physicsEngine->getSelectedShape();
+            // Update UI selection
+            Shape* selected = physicsEngine->getSelectedShape();
+            if (uiManager) {
                 uiManager->setSelectedShape(selected);
-                if (selected) {
-                    cout << "Selected shape at position: (" << selected->getPosition().x << ", " << selected->getPosition().y << ")" << endl;
-                }
             }
-        } else if (action == GLFW_RELEASE) {
-            cout << "Mouse release" << endl;
-            if (!uiManager->isClickToSpawnMode()) {
-                physicsEngine->handleMouseRelease();
-            }
+        }
+    } else if (action == GLFW_RELEASE) {
+        if (physicsEngine && (!uiManager || !uiManager->isClickToSpawnMode())) {
+            physicsEngine->handleMouseRelease();
         }
     }
 }
@@ -55,7 +65,9 @@ void cursor_position_callback(GLFWwindow* window, double xpos, double ypos) {
         return; // Let ImGui handle this
     }
     
-    physicsEngine->handleMouseMove(glm::vec2(xpos, ypos));
+    if (physicsEngine) {
+        physicsEngine->handleMouseMove(glm::vec2(xpos, ypos));
+    }
 }
 
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
@@ -69,15 +81,15 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     cout << "Window resized to: " << width << "x" << height << endl;
     glViewport(0, 0, width, height);
     
-    // Update projection matrix for new window size
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glOrtho(0, width, height, 0, -1, 1); // Top-left origin
+    // Update physics engine world bounds
+    if (physicsEngine) {
+        physicsEngine->setWorldBounds(glm::vec2(width, height));
+    }
     
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-    
-    physicsEngine->setWorldBounds(glm::vec2(width, height));
+    // Update renderer projection if available
+    if (physicsEngine && physicsEngine->getRenderer()) {
+        physicsEngine->getRenderer()->setupProjection(width, height);
+    }
 }
 
 void setupOpenGL(int width, int height) {
@@ -86,13 +98,8 @@ void setupOpenGL(int width, int height) {
     glEnable(GL_LINE_SMOOTH);
     glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
     
-    // Set up 2D orthographic projection matching window size
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    glOrtho(0, width, height, 0, -1, 1); // Top-left origin
-    
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
+    // Note: Projection setup moved to ModernRenderer
+    // This function now only handles global OpenGL state
     
     cout << "OpenGL setup complete for " << width << "x" << height << endl;
 }
@@ -101,26 +108,8 @@ void renderBackground() {
     glClearColor(0.1f, 0.1f, 0.15f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     
-    // Draw grid
-    glColor3f(0.2f, 0.2f, 0.25f);
-    glBegin(GL_LINES);
-    
-    int width, height;
-    glfwGetFramebufferSize(window, &width, &height);
-    
-    // Vertical lines
-    for (int x = 0; x <= width; x += 50) {
-        glVertex2f(static_cast<float>(x), 0.0f);
-        glVertex2f(static_cast<float>(x), static_cast<float>(height));
-    }
-    
-    // Horizontal lines
-    for (int y = 0; y <= height; y += 50) {
-        glVertex2f(0.0f, static_cast<float>(y));
-        glVertex2f(static_cast<float>(width), static_cast<float>(y));
-    }
-    
-    glEnd();
+    // Note: Grid rendering moved to ModernRenderer for consistency
+    // This function now only handles background clearing
 }
 
 int main() {
@@ -173,54 +162,85 @@ int main() {
     }
     cout << "ImGui initialized successfully" << endl;
 
-    // Create physics engine and UI manager
-    physicsEngine = new PhysicsEngine();
+    // Initialize physics engine
+    physicsEngine = new PhysicsEngine(width, height);
+    
+    // Initialize modern GPU renderer
+    if (!physicsEngine->initializeRenderer(width, height)) {
+        std::cerr << "Failed to initialize renderer!" << std::endl;
+        delete physicsEngine;
+        glfwTerminate();
+        return -1;
+    }
+    
+    // Initialize UI manager
     uiManager = new UIManager(physicsEngine);
     cout << "Physics engine and UI manager created" << endl;
     
     // Set world bounds
     physicsEngine->setWorldBounds(glm::vec2(width, height));
     
-    // Add some initial shapes for demonstration
-    physicsEngine->addShape(std::make_unique<Circle>(glm::vec2(200.0f, 100.0f), 30.0f, glm::vec3(1, 0, 0)));
-    physicsEngine->addShape(std::make_unique<Rectangle>(glm::vec2(400.0f, 150.0f), 60.0f, 40.0f, glm::vec3(0, 1, 0)));
-    physicsEngine->addShape(std::make_unique<Triangle>(glm::vec2(600.0f, 200.0f), 50.0f, glm::vec3(0, 0, 1)));
+    // Add some test shapes for mouse interaction testing
+    auto testCircle = std::make_unique<Circle>(glm::vec2(width * 0.5f, height * 0.5f), 50.0f, glm::vec3(1.0f, 0.0f, 0.0f));
+    testCircle->setMass(1.0f);
+    testCircle->setGravity(981.0f); // Use positive gravity (downward)
+    testCircle->getPhysics().restitution = 0.8f;
+    testCircle->getPhysics().isStatic = false; // Ensure it's not static
+    physicsEngine->addShape(std::move(testCircle));
     
-    // Add a static ground
-    auto ground = std::make_unique<Rectangle>(
-        glm::vec2(static_cast<float>(width) / 2.0f, static_cast<float>(height) - 50.0f),
-        static_cast<float>(width), 100.0f, glm::vec3(0.5f, 0.5f, 0.5f));
-    ground->getPhysics().isStatic = true;
-    physicsEngine->addShape(std::move(ground));
+    auto testRect = std::make_unique<Rectangle>(glm::vec2(width * 0.25f, height * 0.25f), 80.0f, 60.0f, glm::vec3(0.0f, 1.0f, 0.0f));
+    testRect->setMass(1.0f);
+    testRect->setGravity(981.0f); // Use positive gravity (downward)
+    testRect->getPhysics().restitution = 0.8f;
+    testRect->getPhysics().isStatic = false; // Ensure it's not static
+    physicsEngine->addShape(std::move(testRect));
     
-    cout << "Initial shapes added. Starting main loop..." << endl;
+    auto testTriangle = std::make_unique<Triangle>(glm::vec2(width * 0.75f, height * 0.75f), 60.0f, glm::vec3(0.0f, 0.0f, 1.0f));
+    testTriangle->setMass(1.0f);
+    testTriangle->setGravity(981.0f); // Use positive gravity (downward)
+    testTriangle->getPhysics().restitution = 0.8f;
+    testTriangle->getPhysics().isStatic = false; // Ensure it's not static
+    physicsEngine->addShape(std::move(testTriangle));
+    
+    cout << "Physics engine initialized with test shapes. Starting main loop..." << endl;
 
-    // Main loop
-    float lastTime = 0.0f;
+    // Main loop with fixed timestep physics
+    const float fixedTimeStep = 1.0f / 120.0f; // 120 Hz physics for smooth motion
+    float accumulator = 0.0f;
+    float lastTime = static_cast<float>(glfwGetTime());
     int frameCount = 0;
-    const float targetFrameTime = 1.0f / 120.0f; // Target 120 FPS
+    const float targetFrameTime = 1.0f / 120.0f; // Target 120 FPS for rendering
     
     while (!glfwWindowShouldClose(window)) {
-        float currentTime = glfwGetTime();
-        float deltaTime = currentTime - lastTime;
-        
-        // Frame rate limiting - wait if we're running too fast
-        if (deltaTime < targetFrameTime) {
-            float sleepTime = targetFrameTime - deltaTime;
-            if (sleepTime > 0.001f) { // Only sleep if it's worth it (>1ms)
-                glfwWaitEventsTimeout(sleepTime);
-                currentTime = glfwGetTime();
-                deltaTime = currentTime - lastTime;
-            }
-        }
-        
+        float currentTime = static_cast<float>(glfwGetTime());
+        float frameTime = currentTime - lastTime;
         lastTime = currentTime;
         
-        // Cap delta time to prevent large jumps
-        if (deltaTime > 0.1f) deltaTime = 0.1f;
-
-        // Update physics
-        physicsEngine->update(deltaTime);
+        // Debug: Check if window should close
+        if (glfwWindowShouldClose(window)) {
+            cout << "Window should close detected!" << endl;
+            break;
+        }
+        
+        // Add frame time to accumulator
+        accumulator += frameTime;
+        
+        // Cap accumulator to prevent spiral of death
+        if (accumulator > 0.25f) accumulator = 0.25f;
+        
+        // Run physics updates with fixed timestep
+        while (accumulator >= fixedTimeStep) {
+            physicsEngine->update(fixedTimeStep);
+            accumulator -= fixedTimeStep;
+        }
+        
+        // Frame rate limiting for rendering - wait if we're running too fast
+        if (frameTime < targetFrameTime) {
+            float sleepTime = targetFrameTime - frameTime;
+            if (sleepTime > 0.001f) { // Only sleep if it's worth it (>1ms)
+                glfwWaitEventsTimeout(sleepTime);
+            }
+        }
 
         // Render
         renderBackground();
@@ -229,6 +249,11 @@ int main() {
         // Render velocity vectors if enabled
         if (uiManager->getShowVelocityVectors()) {
             physicsEngine->renderVelocityVectors();
+        }
+        
+        // Render spatial grid if enabled
+        if (physicsEngine->getShowSpatialGrid()) {
+            physicsEngine->renderSpatialGrid();
         }
 
         // Render UI
@@ -239,19 +264,9 @@ int main() {
         glfwSwapBuffers(window);
         glfwPollEvents();
         
-        // Debug output every 60 frames
-        frameCount++;
-        if (frameCount % 60 == 0) {
-            const auto& shapes = physicsEngine->getShapes();
-            Shape* selected = physicsEngine->getSelectedShape();
-            cout << "Frame " << frameCount << " - Shapes: " << shapes.size() 
-                 << " - FPS: " << (1.0f / deltaTime) 
-                 << " - Selected: " << (selected ? "Yes" : "No") << endl;
-        }
-        
         // Update debug info for UI
         const auto& shapes = physicsEngine->getShapes();
-        uiManager->setDeltaTime(deltaTime);
+        uiManager->setDeltaTime(frameTime);
         uiManager->setObjectCount(static_cast<int>(shapes.size()));
     }
 

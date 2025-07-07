@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 #include <iostream>
 #include <cmath>
+#include <thread>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -13,7 +14,7 @@ UIManager::UIManager(PhysicsEngine* engine)
     : physicsEngine(engine), showDemoWindow(false), showPropertyPanel(true), showDebugPanel(true),
       selectedShapeType(0), selectedShape(nullptr), currentFPS(0.0f), objectCount(0), showVelocityVectors(false), uiScale(2),
       spawnMode(SpawnMode::SINGLE_CLICK), clickToSpawnMode(false), matrixRows(3), matrixColumns(3), matrixSpacing(50.0f),
-      goldenRatioCount(20), goldenRatioRadius(100.0f), goldenRatioSpacing(1.0f), spawnObjectCount(1),
+      goldenRatioCount(20), goldenRatioRadius(100.0f), goldenRatioSpacing(1.0f), spawnObjectCount(1), useGlobalGravityForNewShapes(true),
       frameTimeIndex(0), smoothedFPS(0.0f) {
     
     // Initialize frame times array
@@ -28,7 +29,7 @@ UIManager::UIManager(PhysicsEngine* engine)
     newShapeColor[1] = 0.5f;
     newShapeColor[2] = 0.0f;
     newShapeMass = 1.0f;
-    newShapeGravity = -9.81f;
+    newShapeGravity = 981.0f;
     newShapeRestitution = 0.8f;
     
     // Initialize selected shape properties
@@ -38,7 +39,7 @@ UIManager::UIManager(PhysicsEngine* engine)
     selectedSize[0] = 30.0f;
     selectedSize[1] = 40.0f;
     selectedMass = 1.0f;
-    selectedGravity = -9.81f;
+    selectedGravity = 981.0f;
     selectedRestitution = 0.8f;
     selectedStatic = false;
 }
@@ -86,14 +87,6 @@ void UIManager::renderFrame() {
 }
 
 void UIManager::render() {
-    static int frameCount = 0;
-    frameCount++;
-    
-    // Debug output every 60 frames
-    if (frameCount % 60 == 0) {
-        std::cout << "UI Manager rendering - Selected shape: " << (selectedShape ? "Yes" : "No") << std::endl;
-    }
-    
     renderMainMenu();
     renderShapeCreation();
     renderWorldSettings();
@@ -310,7 +303,16 @@ void UIManager::renderShapeCreation() {
         
         // Physics properties
         ImGui::SliderFloat("Mass", &newShapeMass, 0.1f, 10.0f);
+        
+        // Global gravity toggle for new shapes
+        if (ImGui::Checkbox("Use Global Gravity", &useGlobalGravityForNewShapes)) {
+            // Toggle was changed
+        }
+        
+        ImGui::BeginDisabled(useGlobalGravityForNewShapes);
         ImGui::SliderFloat("Gravity", &newShapeGravity, -50.0f, 50.0f);
+        ImGui::EndDisabled();
+        
         ImGui::SliderFloat("Restitution", &newShapeRestitution, 0.0f, 1.0f);
         
         ImGui::Separator();
@@ -375,7 +377,7 @@ void UIManager::renderShapeCreation() {
 
 void UIManager::renderWorldSettings() {
     ImGui::SetNextWindowPos(ImVec2(10, 340), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(250, 150), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(250, 180), ImGuiCond_FirstUseEver);
     
     if (ImGui::Begin("World Settings")) {
         glm::vec2 gravity = physicsEngine->getGravity();
@@ -389,6 +391,13 @@ void UIManager::renderWorldSettings() {
                     shape->setGravity(gravityY);
                 }
             }
+        }
+        
+        ImGui::Separator();
+        
+        // Global gravity toggle for new shapes
+        if (ImGui::Checkbox("Use Global Gravity for New Shapes", &useGlobalGravityForNewShapes)) {
+            // Toggle was changed
         }
         
         ImGui::Separator();
@@ -456,7 +465,7 @@ void UIManager::renderDebugPanel() {
         ImGui::Separator();
         
         // FPS display with color coding
-        ImGui::Text("FPS (Smoothed): ");
+        ImGui::Text("FPS: ");
         ImGui::SameLine();
         if (smoothedFPS >= 55.0f) {
             ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "%.1f", smoothedFPS);
@@ -466,36 +475,8 @@ void UIManager::renderDebugPanel() {
             ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "%.1f", smoothedFPS);
         }
         
-        // Show frame time for debugging
-        float avgFrameTime = (smoothedFPS > 0.0f) ? 1000.0f / smoothedFPS : 0.0f;
-        ImGui::Text("Frame Time: %.1f ms", avgFrameTime);
-        
-        // Calculate min/max frame times for stability analysis
-        float minFrameTime = frameTimes[0];
-        float maxFrameTime = frameTimes[0];
-        for (int i = 1; i < FPS_SAMPLE_COUNT; ++i) {
-            if (frameTimes[i] < minFrameTime) minFrameTime = frameTimes[i];
-            if (frameTimes[i] > maxFrameTime) maxFrameTime = frameTimes[i];
-        }
-        ImGui::Text("Frame Time Range: %.1f - %.1f ms", minFrameTime * 1000.0f, maxFrameTime * 1000.0f);
-        
-        // Calculate FPS stability (coefficient of variation)
-        float frameTimeVariance = 0.0f;
-        for (int i = 0; i < FPS_SAMPLE_COUNT; ++i) {
-            float diff = frameTimes[i] - avgFrameTime / 1000.0f;
-            frameTimeVariance += diff * diff;
-        }
-        frameTimeVariance /= FPS_SAMPLE_COUNT;
-        float frameTimeStdDev = sqrtf(frameTimeVariance);
-        float stability = (avgFrameTime > 0.0f) ? (frameTimeStdDev * 1000.0f / avgFrameTime) * 100.0f : 0.0f;
-        ImGui::Text("FPS Stability: %.1f%%", 100.0f - stability);
-        
         // Object count
         ImGui::Text("Objects: %d", objectCount);
-        
-        // Memory usage (estimated)
-        size_t estimatedMemory = objectCount * 256; // Rough estimate per object
-        ImGui::Text("Est. Memory: %.1f KB", estimatedMemory / 1024.0f);
         
         ImGui::Separator();
         ImGui::Text("Physics");
@@ -508,19 +489,10 @@ void UIManager::renderDebugPanel() {
         glm::vec2 worldBounds = physicsEngine->getWorldBounds();
         ImGui::Text("World Size: %.0f x %.0f", worldBounds.x, worldBounds.y);
         
-        // Optimization performance
-        ImGui::Separator();
-        ImGui::Text("Optimization Performance");
-        ImGui::Separator();
-        
-        ImGui::Text("Collision Checks: %d", physicsEngine->getCollisionChecksThisFrame());
-        ImGui::Text("Actual Collisions: %d", physicsEngine->getActualCollisionsThisFrame());
-        ImGui::Text("Spatial Cells: %d", physicsEngine->getSpatialCellCount());
-        ImGui::Text("Neighbor Tracking: %d", physicsEngine->getNeighborTrackingCount());
-        
-        float efficiency = (physicsEngine->getCollisionChecksThisFrame() > 0) ? 
-            (float)physicsEngine->getActualCollisionsThisFrame() / physicsEngine->getCollisionChecksThisFrame() * 100.0f : 0.0f;
-        ImGui::Text("Collision Efficiency: %.1f%%", efficiency);
+        // Collision info
+        ImGui::Text("Collisions: %d / %d", 
+                   physicsEngine->getActualCollisionsThisFrame(),
+                   physicsEngine->getCollisionChecksThisFrame());
         
         // Selected object info
         if (selectedShape) {
@@ -534,14 +506,6 @@ void UIManager::renderDebugPanel() {
             ImGui::Text("Position: (%.1f, %.1f)", pos.x, pos.y);
             ImGui::Text("Velocity: (%.1f, %.1f)", vel.x, vel.y);
             ImGui::Text("Mass: %.2f", selectedShape->getMass());
-            ImGui::Text("Static: %s", selectedShape->getPhysics().isStatic ? "Yes" : "No");
-        }
-        
-        ImGui::Separator();
-        
-        // Controls
-        if (ImGui::Button("Reset Physics", ImVec2(-1, 0))) {
-            physicsEngine->setGravity(glm::vec2(0.0f, -9.81f));
         }
         
         ImGui::Separator();
@@ -551,8 +515,11 @@ void UIManager::renderDebugPanel() {
         if (ImGui::Checkbox("Show Velocity Vectors", &showVelocityVectors)) {
             // Toggle was changed
         }
-        if (showVelocityVectors) {
-            ImGui::TextWrapped("Velocity vectors are displayed as lines from object centers");
+        
+        // Spatial grid visualization
+        bool showGrid = getShowSpatialGrid();
+        if (ImGui::Checkbox("Show Spatial Grid", &showGrid)) {
+            setShowSpatialGrid(showGrid);
         }
         
         ImGui::Separator();
@@ -603,7 +570,12 @@ void UIManager::handleClickToSpawn(const glm::vec2& worldPos) {
     
     if (newShape) {
         newShape->setMass(newShapeMass);
-        newShape->setGravity(newShapeGravity);
+        newShape->setUseGlobalGravity(useGlobalGravityForNewShapes);
+        if (useGlobalGravityForNewShapes) {
+            newShape->setGravity(physicsEngine->getGravity().y);
+        } else {
+            newShape->setGravity(newShapeGravity);
+        }
         newShape->getPhysics().restitution = newShapeRestitution;
         physicsEngine->addShape(std::move(newShape));
         spawnObjectCount++;
@@ -614,29 +586,33 @@ void UIManager::spawnSingleObject() {
     // Get screen center for single object spawn
     glm::vec2 worldBounds = physicsEngine->getWorldBounds();
     glm::vec2 screenCenter(worldBounds.x * 0.5f, worldBounds.y * 0.5f);
-    glm::vec3 color(newShapeColor[0], newShapeColor[1], newShapeColor[2]);
     
-    for (int i = 0; i < spawnObjectCount; ++i) {
-        std::unique_ptr<Shape> newShape;
-        
-        switch (selectedShapeType) {
-            case 0: // Circle
-                newShape = std::make_unique<Circle>(screenCenter, newShapeSize[0], color);
-                break;
-            case 1: // Rectangle
-                newShape = std::make_unique<Rectangle>(screenCenter, newShapeSize[0], newShapeSize[1], color);
-                break;
-            case 2: // Triangle
-                newShape = std::make_unique<Triangle>(screenCenter, newShapeSize[0], color);
-                break;
-        }
-        
-        if (newShape) {
-            newShape->setMass(newShapeMass);
+    // Create shape
+    glm::vec3 color(newShapeColor[0], newShapeColor[1], newShapeColor[2]);
+    std::unique_ptr<Shape> newShape;
+    
+    switch (selectedShapeType) {
+        case 0: // Circle
+            newShape = std::make_unique<Circle>(screenCenter, newShapeSize[0], color);
+            break;
+        case 1: // Rectangle
+            newShape = std::make_unique<Rectangle>(screenCenter, newShapeSize[0], newShapeSize[1], color);
+            break;
+        case 2: // Triangle
+            newShape = std::make_unique<Triangle>(screenCenter, newShapeSize[0], color);
+            break;
+    }
+    
+    if (newShape) {
+        newShape->setMass(newShapeMass);
+        newShape->setUseGlobalGravity(useGlobalGravityForNewShapes);
+        if (useGlobalGravityForNewShapes) {
+            newShape->setGravity(physicsEngine->getGravity().y);
+        } else {
             newShape->setGravity(newShapeGravity);
-            newShape->getPhysics().restitution = newShapeRestitution;
-            physicsEngine->addShape(std::move(newShape));
         }
+        newShape->getPhysics().restitution = newShapeRestitution;
+        physicsEngine->addShape(std::move(newShape));
     }
 }
 
@@ -669,7 +645,12 @@ void UIManager::spawnMatrix() {
             
             if (newShape) {
                 newShape->setMass(newShapeMass);
-                newShape->setGravity(newShapeGravity);
+                newShape->setUseGlobalGravity(useGlobalGravityForNewShapes);
+                if (useGlobalGravityForNewShapes) {
+                    newShape->setGravity(physicsEngine->getGravity().y);
+                } else {
+                    newShape->setGravity(newShapeGravity);
+                }
                 newShape->getPhysics().restitution = newShapeRestitution;
                 physicsEngine->addShape(std::move(newShape));
             }
@@ -713,7 +694,12 @@ void UIManager::spawnGoldenRatio() {
         
         if (newShape) {
             newShape->setMass(newShapeMass);
-            newShape->setGravity(newShapeGravity);
+            newShape->setUseGlobalGravity(useGlobalGravityForNewShapes);
+            if (useGlobalGravityForNewShapes) {
+                newShape->setGravity(physicsEngine->getGravity().y);
+            } else {
+                newShape->setGravity(newShapeGravity);
+            }
             newShape->getPhysics().restitution = newShapeRestitution;
             physicsEngine->addShape(std::move(newShape));
         }
@@ -759,6 +745,6 @@ void UIManager::setDeltaTime(float deltaTime) {
         smoothedFPS = 0.0f;
     }
     
-    // Also update the current FPS for backward compatibility
+    // Update current FPS for backward compatibility
     currentFPS = smoothedFPS;
 } 

@@ -1,3 +1,12 @@
+#ifdef Rectangle
+#undef Rectangle
+#endif
+#ifdef Circle
+#undef Circle
+#endif
+#ifdef Triangle
+#undef Triangle
+#endif
 #pragma once
 #include <vector>
 #include <memory>
@@ -22,6 +31,20 @@ struct PhysicsProperties {
     float friction = 0.1f;
     float restitution = 0.8f;
     bool isStatic = false;
+    glm::vec2 position;
+    glm::vec2 velocity;
+    float rotation;
+};
+
+// LOD level structure for optimization
+struct LODLevel {
+    float distance;
+    float updateInterval;
+    bool renderVelocity;
+    bool detailedCollision;
+    
+    LODLevel(float dist = 100.0f, float interval = 1.0f, bool vel = true, bool collision = true)
+        : distance(dist), updateInterval(interval), renderVelocity(vel), detailedCollision(collision) {}
 };
 
 struct BoundingBox {
@@ -49,6 +72,13 @@ protected:
     std::deque<std::pair<glm::vec2, double>> dragHistory; // position, time
     static constexpr size_t DRAG_HISTORY_SIZE = 5;
     bool useGlobalGravity = true;
+    
+    // LOD and optimization support
+    LODLevel currentLOD;
+    float lastUpdateTime;
+    float updateAccumulator;
+    bool needsDetailedUpdate;
+    bool isOptimized;
 
 public:
     Shape(const glm::vec2& pos, const glm::vec3& col = glm::vec3(1.0f));
@@ -63,6 +93,7 @@ public:
     virtual bool checkCollision(const Shape* other) const = 0;
     void resolveCollision(Shape* other, const glm::vec2& normal, float penetration);
     virtual BoundingBox getBoundingBox() const = 0;
+    void updateBoundingBox();
     
     // Rendering
     virtual void render() const = 0;
@@ -74,26 +105,43 @@ public:
     void updateDrag(const glm::vec2& mousePos);
     void endDrag();
     
-    // Getters and setters
-    glm::vec2 getPosition() const { return position; }
-    void setPosition(const glm::vec2& pos) { position = pos; }
-    glm::vec2 getVelocity() const { return velocity; }
-    void setVelocity(const glm::vec2& vel) { velocity = vel; }
-    glm::vec3 getColor() const { return color; }
-    void setColor(const glm::vec3& col) { color = col; }
-    float getMass() const { return physics.mass; }
-    void setMass(float m) { physics.mass = m; }
-    float getGravity() const { return physics.gravity; }
-    void setGravity(float g) { physics.gravity = g; }
-    bool getIsSelected() const { return isSelected; }
-    void setIsSelected(bool selected) { isSelected = selected; }
-    bool getIsDragging() const { return isDragging; }
-    PhysicsProperties& getPhysics() { return physics; }
+    // LOD and optimization
+    void setLODLevel(const LODLevel& lod) { currentLOD = lod; }
+    const LODLevel& getLODLevel() const { return currentLOD; }
+    bool shouldUpdate(float deltaTime);
+    bool shouldRenderVelocity() const { return currentLOD.renderVelocity; }
+    bool shouldUseDetailedCollision() const { return currentLOD.detailedCollision; }
+    void setOptimized(bool optimized) { isOptimized = optimized; }
+    bool getOptimized() const { return isOptimized; }
     
+    // Getters
+    const glm::vec2& getPosition() const { return physics.position; }
+    const glm::vec2& getVelocity() const { return physics.velocity; }
+    const glm::vec3& getColor() const { return color; }
+    float getMass() const { return physics.mass; }
+    float getRotation() const { return physics.rotation; }
     virtual ShapeType getType() const = 0;
-    virtual BodyType getBodyType() const = 0;
+    const PhysicsProperties& getPhysics() const { return physics; }
+    
+    // Setters
+    void setPosition(const glm::vec2& pos) { physics.position = pos; }
+    void setVelocity(const glm::vec2& vel) { physics.velocity = vel; }
+    void setColor(const glm::vec3& col) { color = col; }
+    void setMass(float m) { physics.mass = m; }
+    void setGravity(float g) { physics.gravity = g; }
+    void setIsSelected(bool selected) { isSelected = selected; }
     void setUseGlobalGravity(bool use) { useGlobalGravity = use; }
+    // Internal setters for synchronizing protected members
+    void setInternalPosition(const glm::vec2& pos) { position = pos; }
+    void setInternalVelocity(const glm::vec2& vel) { velocity = vel; }
+    
+    // Other methods
+    virtual BodyType getBodyType() const = 0;
+    float getGravity() const { return physics.gravity; }
+    bool getIsSelected() const { return isSelected; }
+    bool getIsDragging() const { return isDragging; }
     bool getUseGlobalGravity() const { return useGlobalGravity; }
+    PhysicsProperties& getPhysics() { return physics; }
     
     // Bounding radius for collision detection
     virtual float getBoundingRadius() const = 0;
