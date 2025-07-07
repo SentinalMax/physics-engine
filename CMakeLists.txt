@@ -1,10 +1,14 @@
 cmake_minimum_required(VERSION 3.5.0)
-project(hello_window VERSION 1.0.0)
+project(physics_engine VERSION 1.0.0)
 
 find_package(OpenGL REQUIRED)
 
-add_executable(hello_window src/config.h src/main.cpp src/glad.c)
+add_executable(physics_engine src/config.h src/main.cpp src/glad.c)
 
-target_include_directories(hello_window PRIVATE dependencies)
+target_include_directories(physics_engine PRIVATE dependencies)
 
-target_link_libraries(hello_window glfw OpenGL::GL)
+# Link GLFW from local dependencies 
+target_link_libraries(physics_engine 
+    ${CMAKE_CURRENT_SOURCE_DIR}/dependencies/lib-vc2022/glfw3.lib
+    OpenGL::GL
+)
