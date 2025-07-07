@@ -760,11 +760,10 @@ void PhysicsEngine::renderVelocityVectors() const {
 }
 
 void PhysicsEngine::renderSpatialGrid() const {
-    if (!showSpatialGrid || shapes.size() <= 200) return;
+    if (!showSpatialGrid) return;
 
     glUseProgram(0);
 
-    // Set up legacy orthographic projection for immediate mode
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -774,54 +773,36 @@ void PhysicsEngine::renderSpatialGrid() const {
     glPushMatrix();
     glLoadIdentity();
 
-    const float cellSize = 100.0f;
-    std::unordered_map<std::pair<int, int>, std::vector<Shape*>, GridHash> grid;
-    for (const auto& obj : shapes) {
-        if (!obj) continue;
-        BoundingBox bbox = obj->getBoundingBox();
-        int minX = static_cast<int>(bbox.min.x / cellSize);
-        int maxX = static_cast<int>(bbox.max.x / cellSize);
-        int minY = static_cast<int>(bbox.min.y / cellSize);
-        int maxY = static_cast<int>(bbox.max.y / cellSize);
-        for (int x = minX; x <= maxX; ++x) {
-            for (int y = minY; y <= maxY; ++y) {
-                grid[{x, y}].push_back(obj.get());
-            }
-        }
-    }
+    // Draw grid cells from spatialGrid
     glColor3f(0.3f, 0.3f, 0.8f);
     glLineWidth(1.0f);
     glBegin(GL_LINES);
-    int minGridX = INT_MAX, maxGridX = INT_MIN;
-    int minGridY = INT_MAX, maxGridY = INT_MIN;
-    for (const auto& cell : grid) {
-        minGridX = std::min(minGridX, cell.first.first);
-        maxGridX = std::max(maxGridX, cell.first.first);
-        minGridY = std::min(minGridY, cell.first.second);
-        maxGridY = std::max(maxGridY, cell.first.second);
-    }
-    for (int x = minGridX; x <= maxGridX + 1; ++x) {
-        float worldX = static_cast<float>(x) * cellSize;
-        glVertex2f(worldX, static_cast<float>(minGridY) * cellSize);
-        glVertex2f(worldX, static_cast<float>(maxGridY + 1) * cellSize);
-    }
-    for (int y = minGridY; y <= maxGridY + 1; ++y) {
-        float worldY = static_cast<float>(y) * cellSize;
-        glVertex2f(static_cast<float>(minGridX) * cellSize, worldY);
-        glVertex2f(static_cast<float>(maxGridX + 1) * cellSize, worldY);
+    for (const auto& cell : spatialGrid) {
+        // Vertical lines (left and right)
+        glVertex2f(cell.min.x, cell.min.y);
+        glVertex2f(cell.min.x, cell.max.y);
+        glVertex2f(cell.max.x, cell.min.y);
+        glVertex2f(cell.max.x, cell.max.y);
+        // Horizontal lines (top and bottom)
+        glVertex2f(cell.min.x, cell.min.y);
+        glVertex2f(cell.max.x, cell.min.y);
+        glVertex2f(cell.min.x, cell.max.y);
+        glVertex2f(cell.max.x, cell.max.y);
     }
     glEnd();
-    glColor3f(1.0f, 1.0f, 1.0f);
-    for (const auto& cell : grid) {
-        if (cell.second.size() > 1) {
-            float cellX = static_cast<float>(cell.first.first) * cellSize + cellSize * 0.5f;
-            float cellY = static_cast<float>(cell.first.second) * cellSize + cellSize * 0.5f;
+
+    // Draw occupancy circles
+    for (const auto& cell : spatialGrid) {
+        if (!cell.objects.empty()) {
+            float cx = (cell.min.x + cell.max.x) * 0.5f;
+            float cy = (cell.min.y + cell.max.y) * 0.5f;
+            float r = 8.0f + 2.0f * std::min((int)cell.objects.size(), 10); // scale with occupancy
             glColor3f(1.0f, 0.0f, 0.0f);
             glBegin(GL_TRIANGLE_FAN);
-            glVertex2f(cellX, cellY);
+            glVertex2f(cx, cy);
             for (int i = 0; i <= 16; ++i) {
-                float angle = 2.0f * static_cast<float>(M_PI) * static_cast<float>(i) / 16.0f;
-                glVertex2f(cellX + 8.0f * cos(angle), cellY + 8.0f * sin(angle));
+                float angle = 2.0f * static_cast<float>(M_PI) * i / 16.0f;
+                glVertex2f(cx + r * cos(angle), cy + r * sin(angle));
             }
             glEnd();
         }
