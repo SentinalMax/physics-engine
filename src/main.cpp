@@ -248,7 +248,10 @@ int main() {
         
         // Render velocity vectors if enabled
         if (uiManager->getShowVelocityVectors()) {
+            std::cout << "DEBUG: Velocity vectors toggle is ON" << std::endl;
             physicsEngine->renderVelocityVectors();
+        } else {
+            std::cout << "DEBUG: Velocity vectors toggle is OFF" << std::endl;
         }
         
         // Render spatial grid if enabled

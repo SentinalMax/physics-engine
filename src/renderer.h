@@ -83,4 +83,5 @@ public:
     
     // Utility
     void clearInstances();
+    GLuint getShaderProgram() const { return shaderProgram; }
 }; 

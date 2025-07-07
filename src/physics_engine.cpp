@@ -707,52 +707,75 @@ void PhysicsEngine::render() const {
 }
 
 void PhysicsEngine::renderVelocityVectors() const {
-    // Render velocity vectors for all shapes
+    glUseProgram(0);
+
+    // Set up legacy orthographic projection for immediate mode
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0, worldBounds.x, worldBounds.y, 0, -1, 1);
+
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    int vectorsRendered = 0;
     for (const auto& shape : shapes) {
         glm::vec2 velocity = shape->getVelocity();
         float speed = glm::length(velocity);
-        
-        // Only draw if there's significant velocity
         if (speed > 0.1f) {
             glm::vec2 position = shape->getPosition();
             glm::vec2 direction = glm::normalize(velocity);
-            
-            // Make the vector length more sensitive to speed
             float maxLength = 120.0f;
             float length = std::min(speed * 6.0f, maxLength);
             glm::vec2 endPoint = position + direction * length;
-            
-            // Draw the velocity vector
-            glColor3f(1.0f, 1.0f, 0.0f); // Yellow for velocity
+            glColor3f(1.0f, 1.0f, 0.0f);
             glLineWidth(2.0f);
             glBegin(GL_LINES);
             glVertex2f(position.x, position.y);
             glVertex2f(endPoint.x, endPoint.y);
             glEnd();
-            
-            // Draw an arrowhead
             float arrowSize = 12.0f;
             glm::vec2 arrowDir1 = rotate2D(direction, -0.3f) * arrowSize;
             glm::vec2 arrowDir2 = rotate2D(direction, 0.3f) * arrowSize;
-            
             glBegin(GL_TRIANGLES);
             glVertex2f(endPoint.x, endPoint.y);
             glVertex2f(endPoint.x - arrowDir1.x, endPoint.y - arrowDir1.y);
             glVertex2f(endPoint.x - arrowDir2.x, endPoint.y - arrowDir2.y);
             glEnd();
-            
             glLineWidth(1.0f);
+            vectorsRendered++;
         }
+    }
+
+    // Restore matrices
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+
+    if (renderer) {
+        glUseProgram(renderer->getShaderProgram());
     }
 }
 
 void PhysicsEngine::renderSpatialGrid() const {
     if (!showSpatialGrid || shapes.size() <= 200) return;
-    
-    const float cellSize = 100.0f; // Must match the cellSize in BroadPhaseDetector::update
+
+    glUseProgram(0);
+
+    // Set up legacy orthographic projection for immediate mode
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    glOrtho(0, worldBounds.x, worldBounds.y, 0, -1, 1);
+
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+
+    const float cellSize = 100.0f;
     std::unordered_map<std::pair<int, int>, std::vector<Shape*>, GridHash> grid;
-    
-    // Build the same grid as the broad phase detector
     for (const auto& obj : shapes) {
         if (!obj) continue;
         BoundingBox bbox = obj->getBoundingBox();
@@ -760,55 +783,40 @@ void PhysicsEngine::renderSpatialGrid() const {
         int maxX = static_cast<int>(bbox.max.x / cellSize);
         int minY = static_cast<int>(bbox.min.y / cellSize);
         int maxY = static_cast<int>(bbox.max.y / cellSize);
-        
         for (int x = minX; x <= maxX; ++x) {
             for (int y = minY; y <= maxY; ++y) {
                 grid[{x, y}].push_back(obj.get());
             }
         }
     }
-    
-    // Render grid cells
-    glColor3f(0.3f, 0.3f, 0.8f); // Blue for grid
+    glColor3f(0.3f, 0.3f, 0.8f);
     glLineWidth(1.0f);
     glBegin(GL_LINES);
-    
-    // Find grid bounds
     int minGridX = INT_MAX, maxGridX = INT_MIN;
     int minGridY = INT_MAX, maxGridY = INT_MIN;
-    
     for (const auto& cell : grid) {
         minGridX = std::min(minGridX, cell.first.first);
         maxGridX = std::max(maxGridX, cell.first.first);
         minGridY = std::min(minGridY, cell.first.second);
         maxGridY = std::max(maxGridY, cell.first.second);
     }
-    
-    // Draw vertical lines
     for (int x = minGridX; x <= maxGridX + 1; ++x) {
         float worldX = static_cast<float>(x) * cellSize;
         glVertex2f(worldX, static_cast<float>(minGridY) * cellSize);
         glVertex2f(worldX, static_cast<float>(maxGridY + 1) * cellSize);
     }
-    
-    // Draw horizontal lines
     for (int y = minGridY; y <= maxGridY + 1; ++y) {
         float worldY = static_cast<float>(y) * cellSize;
         glVertex2f(static_cast<float>(minGridX) * cellSize, worldY);
         glVertex2f(static_cast<float>(maxGridX + 1) * cellSize, worldY);
     }
-    
     glEnd();
-    
-    // Render cell occupancy (number of objects in each cell)
-    glColor3f(1.0f, 1.0f, 1.0f); // White text
+    glColor3f(1.0f, 1.0f, 1.0f);
     for (const auto& cell : grid) {
-        if (cell.second.size() > 1) { // Only show cells with multiple objects
+        if (cell.second.size() > 1) {
             float cellX = static_cast<float>(cell.first.first) * cellSize + cellSize * 0.5f;
             float cellY = static_cast<float>(cell.first.second) * cellSize + cellSize * 0.5f;
-            
-            // Draw a small circle with the count
-            glColor3f(1.0f, 0.0f, 0.0f); // Red for occupied cells
+            glColor3f(1.0f, 0.0f, 0.0f);
             glBegin(GL_TRIANGLE_FAN);
             glVertex2f(cellX, cellY);
             for (int i = 0; i <= 16; ++i) {
@@ -817,6 +825,16 @@ void PhysicsEngine::renderSpatialGrid() const {
             }
             glEnd();
         }
+    }
+
+    // Restore matrices
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+
+    if (renderer) {
+        glUseProgram(renderer->getShaderProgram());
     }
 }
 
