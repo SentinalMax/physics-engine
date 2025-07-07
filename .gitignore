@@ -1,1 +1,102 @@
 build/**
+
+# Dependencies - Ignore unnecessary files while keeping essential source
+
+# GLFW - Keep only the essential header files
+dependencies/GLFW/
+!dependencies/GLFW/glfw3.h
+!dependencies/GLFW/glfw3native.h
+
+# GLAD - Keep only the essential header file
+dependencies/glad/
+!dependencies/glad/glad.h
+
+# KHR - Keep only the essential header file
+dependencies/KHR/
+!dependencies/KHR/khrplatform.h
+
+# GLFW Libraries - Keep only the essential library files
+dependencies/lib-vc2022/
+!dependencies/lib-vc2022/glfw3.lib
+!dependencies/lib-vc2022/glfw3_mt.lib
+!dependencies/lib-vc2022/glfw3.dll
+!dependencies/lib-vc2022/glfw3dll.lib
+
+# ImGui - Keep only essential source files, ignore documentation, examples, and build artifacts
+dependencies/imgui-1.89.9/
+!dependencies/imgui-1.89.9/imgui.h
+!dependencies/imgui-1.89.9/imgui.cpp
+!dependencies/imgui-1.89.9/imgui_draw.cpp
+!dependencies/imgui-1.89.9/imgui_tables.cpp
+!dependencies/imgui-1.89.9/imgui_widgets.cpp
+!dependencies/imgui-1.89.9/imgui_internal.h
+!dependencies/imgui-1.89.9/imconfig.h
+!dependencies/imgui-1.89.9/imstb_rectpack.h
+!dependencies/imgui-1.89.9/imstb_textedit.h
+!dependencies/imgui-1.89.9/imstb_truetype.h
+!dependencies/imgui-1.89.9/LICENSE.txt
+
+# ImGui backends - Keep only GLFW and OpenGL3 backends
+dependencies/imgui-1.89.9/backends/
+!dependencies/imgui-1.89.9/backends/imgui_impl_glfw.cpp
+!dependencies/imgui-1.89.9/backends/imgui_impl_glfw.h
+!dependencies/imgui-1.89.9/backends/imgui_impl_opengl3.cpp
+!dependencies/imgui-1.89.9/backends/imgui_impl_opengl3.h
+
+# GLM - Keep only essential header files, ignore documentation, tests, and build files
+dependencies/glm-0.9.9.8/
+!dependencies/glm-0.9.9.8/glm/
+!dependencies/glm-0.9.9.8/copying.txt
+!dependencies/glm-0.9.9.8/readme.md
+
+# GLM subdirectories - Keep only essential math headers
+dependencies/glm-0.9.9.8/glm/
+!dependencies/glm-0.9.9.8/glm/glm.hpp
+!dependencies/glm-0.9.9.8/glm/common.hpp
+!dependencies/glm-0.9.9.8/glm/exponential.hpp
+!dependencies/glm-0.9.9.8/glm/ext.hpp
+!dependencies/glm-0.9.9.8/glm/fwd.hpp
+!dependencies/glm-0.9.9.8/glm/geometric.hpp
+!dependencies/glm-0.9.9.8/glm/integer.hpp
+!dependencies/glm-0.9.9.8/glm/matrix.hpp
+!dependencies/glm-0.9.9.8/glm/packing.hpp
+!dependencies/glm-0.9.9.8/glm/trigonometric.hpp
+!dependencies/glm-0.9.9.8/glm/vector_relational.hpp
+!dependencies/glm-0.9.9.8/glm/mat2x2.hpp
+!dependencies/glm-0.9.9.8/glm/mat2x3.hpp
+!dependencies/glm-0.9.9.8/glm/mat2x4.hpp
+!dependencies/glm-0.9.9.8/glm/mat3x2.hpp
+!dependencies/glm-0.9.9.8/glm/mat3x3.hpp
+!dependencies/glm-0.9.9.8/glm/mat3x4.hpp
+!dependencies/glm-0.9.9.8/glm/mat4x2.hpp
+!dependencies/glm-0.9.9.8/glm/mat4x3.hpp
+!dependencies/glm-0.9.9.8/glm/mat4x4.hpp
+!dependencies/glm-0.9.9.8/glm/vec2.hpp
+!dependencies/glm-0.9.9.8/glm/vec3.hpp
+!dependencies/glm-0.9.9.8/glm/vec4.hpp
+
+# GLM detail, gtc, gtx, ext, simd directories - Keep all header files
+dependencies/glm-0.9.9.8/glm/detail/
+dependencies/glm-0.9.9.8/glm/gtc/
+dependencies/glm-0.9.9.8/glm/gtx/
+dependencies/glm-0.9.9.8/glm/ext/
+dependencies/glm-0.9.9.8/glm/simd/
+
+# General ignore patterns for dependencies
+dependencies/*/.git/
+dependencies/*/.github/
+dependencies/*/docs/
+dependencies/*/examples/
+dependencies/*/test/
+dependencies/*/tests/
+dependencies/*/util/
+dependencies/*/misc/
+dependencies/*/vulkan/
+dependencies/*/.editorconfig
+dependencies/*/.gitattributes
+dependencies/*/.gitignore
+dependencies/*/.appveyor.yml
+dependencies/*/.travis.yml
+dependencies/*/CMakeLists.txt
+dependencies/*/manual.md
+dependencies/*/imgui_demo.cpp
