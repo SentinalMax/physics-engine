@@ -13,25 +13,32 @@ UIManager::UIManager(PhysicsEngine* engine)
     : physicsEngine(engine), showDemoWindow(false), showPropertyPanel(true), showDebugPanel(true),
       selectedShapeType(0), selectedShape(nullptr), currentFPS(0.0f), objectCount(0), showVelocityVectors(false), uiScale(2),
       spawnMode(SpawnMode::SINGLE_CLICK), clickToSpawnMode(false), matrixRows(3), matrixColumns(3), matrixSpacing(50.0f),
-      goldenRatioCount(10), goldenRatioRadius(100.0f), goldenRatioSpacing(20.0f), spawnObjectCount(1) {
+      goldenRatioCount(20), goldenRatioRadius(100.0f), goldenRatioSpacing(1.0f), spawnObjectCount(1),
+      frameTimeIndex(0), smoothedFPS(0.0f) {
     
-    // Initialize default values
-    newShapeSize[0] = 50.0f;
-    newShapeSize[1] = 50.0f;
+    // Initialize frame times array
+    for (int i = 0; i < FPS_SAMPLE_COUNT; ++i) {
+        frameTimes[i] = 1.0f / 60.0f; // Start with 60 FPS assumption
+    }
+    
+    // Initialize shape properties
+    newShapeSize[0] = 30.0f;
+    newShapeSize[1] = 40.0f;
     newShapeColor[0] = 1.0f;
     newShapeColor[1] = 0.5f;
-    newShapeColor[2] = 0.2f;
+    newShapeColor[2] = 0.0f;
     newShapeMass = 1.0f;
-    newShapeGravity = 9.81f;
+    newShapeGravity = -9.81f;
     newShapeRestitution = 0.8f;
     
+    // Initialize selected shape properties
     selectedColor[0] = 1.0f;
     selectedColor[1] = 1.0f;
     selectedColor[2] = 1.0f;
-    selectedSize[0] = 50.0f;
-    selectedSize[1] = 50.0f;
+    selectedSize[0] = 30.0f;
+    selectedSize[1] = 40.0f;
     selectedMass = 1.0f;
-    selectedGravity = 9.81f;
+    selectedGravity = -9.81f;
     selectedRestitution = 0.8f;
     selectedStatic = false;
 }
@@ -449,15 +456,39 @@ void UIManager::renderDebugPanel() {
         ImGui::Separator();
         
         // FPS display with color coding
-        ImGui::Text("FPS: ");
+        ImGui::Text("FPS (Smoothed): ");
         ImGui::SameLine();
-        if (currentFPS >= 55.0f) {
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "%.1f", currentFPS);
-        } else if (currentFPS >= 30.0f) {
-            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "%.1f", currentFPS);
+        if (smoothedFPS >= 55.0f) {
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "%.1f", smoothedFPS);
+        } else if (smoothedFPS >= 30.0f) {
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "%.1f", smoothedFPS);
         } else {
-            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "%.1f", currentFPS);
+            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "%.1f", smoothedFPS);
         }
+        
+        // Show frame time for debugging
+        float avgFrameTime = (smoothedFPS > 0.0f) ? 1000.0f / smoothedFPS : 0.0f;
+        ImGui::Text("Frame Time: %.1f ms", avgFrameTime);
+        
+        // Calculate min/max frame times for stability analysis
+        float minFrameTime = frameTimes[0];
+        float maxFrameTime = frameTimes[0];
+        for (int i = 1; i < FPS_SAMPLE_COUNT; ++i) {
+            if (frameTimes[i] < minFrameTime) minFrameTime = frameTimes[i];
+            if (frameTimes[i] > maxFrameTime) maxFrameTime = frameTimes[i];
+        }
+        ImGui::Text("Frame Time Range: %.1f - %.1f ms", minFrameTime * 1000.0f, maxFrameTime * 1000.0f);
+        
+        // Calculate FPS stability (coefficient of variation)
+        float frameTimeVariance = 0.0f;
+        for (int i = 0; i < FPS_SAMPLE_COUNT; ++i) {
+            float diff = frameTimes[i] - avgFrameTime / 1000.0f;
+            frameTimeVariance += diff * diff;
+        }
+        frameTimeVariance /= FPS_SAMPLE_COUNT;
+        float frameTimeStdDev = sqrtf(frameTimeVariance);
+        float stability = (avgFrameTime > 0.0f) ? (frameTimeStdDev * 1000.0f / avgFrameTime) * 100.0f : 0.0f;
+        ImGui::Text("FPS Stability: %.1f%%", 100.0f - stability);
         
         // Object count
         ImGui::Text("Objects: %d", objectCount);
@@ -707,4 +738,27 @@ void UIManager::renderCopyright() {
             "Copyright (c) 2025 Alex's Physics Engine - All rights reserved");
     }
     ImGui::End();
+}
+
+void UIManager::setDeltaTime(float deltaTime) {
+    // Store the frame time in our rolling buffer
+    frameTimes[frameTimeIndex] = deltaTime;
+    frameTimeIndex = (frameTimeIndex + 1) % FPS_SAMPLE_COUNT;
+    
+    // Calculate average frame time over the last FPS_SAMPLE_COUNT frames
+    float totalFrameTime = 0.0f;
+    for (int i = 0; i < FPS_SAMPLE_COUNT; ++i) {
+        totalFrameTime += frameTimes[i];
+    }
+    float averageFrameTime = totalFrameTime / FPS_SAMPLE_COUNT;
+    
+    // Calculate smoothed FPS
+    if (averageFrameTime > 0.0f) {
+        smoothedFPS = 1.0f / averageFrameTime;
+    } else {
+        smoothedFPS = 0.0f;
+    }
+    
+    // Also update the current FPS for backward compatibility
+    currentFPS = smoothedFPS;
 } 

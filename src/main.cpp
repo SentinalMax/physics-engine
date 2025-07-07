@@ -143,6 +143,10 @@ int main() {
     cout << "Window created successfully" << endl;
 
     glfwMakeContextCurrent(window);
+    
+    // Enable vsync for more stable frame rates
+    glfwSwapInterval(1);
+    
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
     glfwSetMouseButtonCallback(window, mouse_button_callback);
     glfwSetCursorPosCallback(window, cursor_position_callback);
@@ -194,9 +198,22 @@ int main() {
     // Main loop
     float lastTime = 0.0f;
     int frameCount = 0;
+    const float targetFrameTime = 1.0f / 120.0f; // Target 120 FPS
+    
     while (!glfwWindowShouldClose(window)) {
         float currentTime = glfwGetTime();
         float deltaTime = currentTime - lastTime;
+        
+        // Frame rate limiting - wait if we're running too fast
+        if (deltaTime < targetFrameTime) {
+            float sleepTime = targetFrameTime - deltaTime;
+            if (sleepTime > 0.001f) { // Only sleep if it's worth it (>1ms)
+                glfwWaitEventsTimeout(sleepTime);
+                currentTime = glfwGetTime();
+                deltaTime = currentTime - lastTime;
+            }
+        }
+        
         lastTime = currentTime;
         
         // Cap delta time to prevent large jumps
@@ -233,9 +250,8 @@ int main() {
         }
         
         // Update debug info for UI
-        float fps = 1.0f / static_cast<float>(deltaTime);
         const auto& shapes = physicsEngine->getShapes();
-        uiManager->setFPS(fps);
+        uiManager->setDeltaTime(deltaTime);
         uiManager->setObjectCount(static_cast<int>(shapes.size()));
     }
 

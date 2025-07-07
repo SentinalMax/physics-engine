@@ -44,6 +44,12 @@ private:
     bool showVelocityVectors;
     int uiScale;
     
+    // FPS smoothing
+    static const int FPS_SAMPLE_COUNT = 60;
+    float frameTimes[FPS_SAMPLE_COUNT];
+    int frameTimeIndex;
+    float smoothedFPS;
+    
     // Enhanced spawn panel state
     SpawnMode spawnMode;
     bool clickToSpawnMode;
@@ -72,9 +78,11 @@ public:
     
     // Debug info setters
     void setFPS(float fps) { currentFPS = fps; }
+    void setDeltaTime(float deltaTime);
     void setObjectCount(int count) { objectCount = count; }
     
     // Debug info getters
+    float getSmoothedFPS() const { return smoothedFPS; }
     bool getShowVelocityVectors() const { return showVelocityVectors; }
     int getUIScale() const { return uiScale; }
     void setUIScale(int scale) { uiScale = scale; }
